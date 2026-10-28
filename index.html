@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>貝殻 対数螺旋 3D Canvas</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+<div class="max-w-4xl mx-auto p-4">
+  <h1 class="text-2xl font-bold text-center mb-2 text-orange-300">🐚 貝殻 対数螺旋 3D</h1>
+  <p class="text-center text-gray-400 mb-4 text-sm">Logarithmic Spiral Shell — ドラッグで回転</p>
+
+  <div class="flex gap-4">
+    <div class="flex-1">
+      <canvas id="shellCanvas" width="560" height="560"
+        class="rounded-xl border border-orange-900 w-full cursor-grab"
+        style="max-width:560px;background:#0a0a0f"></canvas>
+    </div>
+
+    <div class="w-60 space-y-3">
+      <!-- Presets -->
+      <div class="bg-gray-800 rounded-xl p-3">
+        <label class="block text-xs font-bold text-orange-300 mb-2">プリセット</label>
+        <div class="space-y-1">
+          <button data-preset="nautilus" aria-label="オウムガイプリセット" class="preset-btn w-full text-left text-xs px-2 py-2 rounded bg-orange-900 hover:bg-orange-800 transition">
+            🐚 オウムガイ
+          </button>
+          <button data-preset="snail" aria-label="カタツムリプリセット" class="preset-btn w-full text-left text-xs px-2 py-2 rounded bg-gray-700 hover:bg-gray-600 transition">
+            🐌 カタツムリ
+          </button>
+          <button data-preset="clam" aria-label="ハマグリプリセット" class="preset-btn w-full text-left text-xs px-2 py-2 rounded bg-gray-700 hover:bg-gray-600 transition">
+            🦪 ハマグリ
+          </button>
+        </div>
+      </div>
+
+      <!-- Parameters -->
+      <div class="bg-gray-800 rounded-xl p-3 space-y-3">
+        <label class="block text-xs font-bold text-orange-300">パラメーター</label>
+
+        <div>
+          <label class="text-xs text-gray-300 block" for="paramA">初期半径 a: <span id="valA">0.5</span></label>
+          <input type="range" id="paramA" aria-label="初期半径" min="0.1" max="2" step="0.05" value="0.5" class="w-full accent-orange-500">
+        </div>
+        <div>
+          <label class="text-xs text-gray-300 block" for="paramB">成長率 b: <span id="valB">0.18</span></label>
+          <input type="range" id="paramB" aria-label="成長率" min="0.05" max="0.5" step="0.01" value="0.18" class="w-full accent-orange-500">
+        </div>
+        <div>
+          <label class="text-xs text-gray-300 block" for="paramTurns">巻き数: <span id="valTurns">3</span></label>
+          <input type="range" id="paramTurns" aria-label="巻き数" min="1" max="8" step="0.5" value="3" class="w-full accent-orange-500">
+        </div>
+        <div>
+          <label class="text-xs text-gray-300 block" for="paramAspect">断面縦横比: <span id="valAspect">0.7</span></label>
+          <input type="range" id="paramAspect" aria-label="断面縦横比" min="0.2" max="2" step="0.05" value="0.7" class="w-full accent-orange-500">
+        </div>
+      </div>
+
+      <!-- Display -->
+      <div class="bg-gray-800 rounded-xl p-3 space-y-2">
+        <label class="block text-xs font-bold text-orange-300">表示</label>
+        <div class="flex gap-2">
+          <button id="wireBtn" aria-label="ワイヤーフレーム表示" class="flex-1 text-xs py-1 rounded bg-gray-700 hover:bg-gray-600 transition">ワイヤー</button>
+          <button id="solidBtn" aria-label="塗りつぶし表示" class="flex-1 text-xs py-1 rounded bg-orange-700 hover:bg-orange-600 transition">塗り</button>
+        </div>
+
+        <label class="block text-xs text-gray-300 mt-1" for="colorScheme">カラー:</label>
+        <select id="colorScheme" aria-label="カラースキーム選択" class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs">
+          <option value="shell">貝殻 (オレンジ)</option>
+          <option value="ocean">海 (青緑)</option>
+          <option value="pearl">真珠 (白)</option>
+          <option value="rainbow">虹</option>
+        </select>
+      </div>
+
+      <div class="bg-gray-800 rounded-xl p-3">
+        <div class="text-xs text-gray-500 space-y-1">
+          <div>数式: r(θ) = a·e^(b·θ)</div>
+          <div>3Dは螺旋を回転体に押し出し</div>
+          <div>ドラッグ: X/Y回転</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+const canvas = document.getElementById('shellCanvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+let params = { a: 0.5, b: 0.18, turns: 3, aspect: 0.7 };
+let rotX = 0.3, rotY = -0.5;
+let isDragging = false, lastMX = 0, lastMY = 0;
+let wireframe = false;
+let colorScheme = 'shell';
+
+const PRESETS = {
+  nautilus: { a: 0.4, b: 0.18, turns: 4, aspect: 0.8 },
+  snail: { a: 0.2, b: 0.25, turns: 6, aspect: 0.5 },
+  clam: { a: 1.0, b: 0.1, turns: 1.5, aspect: 1.5 },
+};
+
+function getColor(t, u, scheme) {
+  // t: 0-1 along spiral, u: 0-1 around cross-section
+  switch (scheme) {
+    case 'shell': {
+      const r = Math.round(180 + t * 60);
+      const g = Math.round(80 + t * 60 + u * 30);
+      const b = Math.round(20 + t * 30);
+      return `rgb(${r},${g},${b})`;
+    }
+    case 'ocean': {
+      const r = Math.round(u * 40);
+      const g = Math.round(100 + t * 80);
+      const b2 = Math.round(140 + t * 80);
+      return `rgb(${r},${g},${b2})`;
+    }
+    case 'pearl': {
+      const v = Math.round(200 + t * 40 + u * 15);
+      return `rgb(${v},${Math.min(255,v+5)},${Math.min(255,v+10)})`;
+    }
+    case 'rainbow': {
+      const hue = (t * 300 + u * 60) % 360;
+      return `hsl(${hue},70%,${50 + t * 20}%)`;
+    }
+    default: return '#cc8844';
+  }
+}
+
+function buildMesh() {
+  const { a, b, turns, aspect } = params;
+  const tSteps = Math.round(turns * 40);
+  const uSteps = 20;
+  const maxTheta = turns * 2 * Math.PI;
+  const scale = 180 / (a * Math.exp(b * maxTheta));
+
+  const vertices = [];
+  for (let ti = 0; ti <= tSteps; ti++) {
+    const theta = (ti / tSteps) * maxTheta;
+    const r = a * Math.exp(b * theta);
+    const sr = r * scale;
+    const row = [];
+    for (let ui = 0; ui <= uSteps; ui++) {
+      const phi = (ui / uSteps) * 2 * Math.PI;
+      // Shell surface: point on torus-like surface
+      const cs = 0.3 * sr; // cross-section radius
+      const x = (sr + cs * Math.cos(phi)) * Math.cos(theta);
+      const y = (sr + cs * Math.cos(phi)) * Math.sin(theta);
+      const z = cs * aspect * Math.sin(phi);
+      row.push([x, y, z]);
+    }
+    vertices.push(row);
+  }
+  return { vertices, tSteps, uSteps };
+}
+
+function rotatePoint([x, y, z]) {
+  // Rotate around Y axis
+  const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+  const x1 = x * cosY + z * sinY;
+  const z1 = -x * sinY + z * cosY;
+  // Rotate around X axis
+  const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+  const y2 = y * cosX - z1 * sinX;
+  const z2 = y * sinX + z1 * cosX;
+  return [x1, y2, z2];
+}
+
+function project([x, y, z]) {
+  const fov = 600;
+  const dist = 500;
+  const s = fov / (dist + z);
+  return [x * s + W / 2, -y * s + H / 2, z];
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(0, 0, W, H);
+
+  const { vertices, tSteps, uSteps } = buildMesh();
+
+  // Collect faces with z-depth for painter's algorithm
+  const faces = [];
+  for (let ti = 0; ti < tSteps; ti++) {
+    for (let ui = 0; ui < uSteps; ui++) {
+      const pts = [
+        vertices[ti][ui],
+        vertices[ti + 1][ui],
+        vertices[ti + 1][ui + 1],
+        vertices[ti][ui + 1],
+      ];
+      const rotPts = pts.map(rotatePoint);
+      const projPts = rotPts.map(project);
+      const avgZ = rotPts.reduce((s, p) => s + p[2], 0) / 4;
+      const t = ti / tSteps, u = ui / uSteps;
+      faces.push({ projPts, avgZ, t, u });
+    }
+  }
+
+  // Sort back-to-front
+  faces.sort((a, b) => a.avgZ - b.avgZ);
+
+  faces.forEach(({ projPts, avgZ, t, u }) => {
+    const light = Math.max(0.3, Math.min(1.0, 0.5 + avgZ / 300));
+    ctx.beginPath();
+    ctx.moveTo(projPts[0][0], projPts[0][1]);
+    projPts.slice(1).forEach(p => ctx.lineTo(p[0], p[1]));
+    ctx.closePath();
+
+    if (!wireframe) {
+      ctx.fillStyle = getColor(t, u, colorScheme);
+      ctx.globalAlpha = 0.85;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    ctx.strokeStyle = wireframe ? getColor(t, u, colorScheme) : 'rgba(0,0,0,0.15)';
+    ctx.lineWidth = wireframe ? 0.5 : 0.3;
+    ctx.stroke();
+  });
+}
+
+draw();
+
+// Sliders
+document.getElementById('paramA').addEventListener('input', e => {
+  params.a = parseFloat(e.target.value);
+  document.getElementById('valA').textContent = params.a.toFixed(2);
+  draw();
+});
+document.getElementById('paramB').addEventListener('input', e => {
+  params.b = parseFloat(e.target.value);
+  document.getElementById('valB').textContent = params.b.toFixed(2);
+  draw();
+});
+document.getElementById('paramTurns').addEventListener('input', e => {
+  params.turns = parseFloat(e.target.value);
+  document.getElementById('valTurns').textContent = params.turns.toFixed(1);
+  draw();
+});
+document.getElementById('paramAspect').addEventListener('input', e => {
+  params.aspect = parseFloat(e.target.value);
+  document.getElementById('valAspect').textContent = params.aspect.toFixed(2);
+  draw();
+});
+
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.preset-btn').forEach(b => b.className = b.className.replace('bg-orange-900','bg-gray-700'));
+    btn.className = btn.className.replace('bg-gray-700','bg-orange-900');
+    const p = PRESETS[btn.dataset.preset];
+    params = { ...p };
+    document.getElementById('paramA').value = p.a;
+    document.getElementById('paramB').value = p.b;
+    document.getElementById('paramTurns').value = p.turns;
+    document.getElementById('paramAspect').value = p.aspect;
+    document.getElementById('valA').textContent = p.a.toFixed(2);
+    document.getElementById('valB').textContent = p.b.toFixed(2);
+    document.getElementById('valTurns').textContent = p.turns.toFixed(1);
+    document.getElementById('valAspect').textContent = p.aspect.toFixed(2);
+    draw();
+  });
+});
+
+document.getElementById('wireBtn').addEventListener('click', () => {
+  wireframe = true;
+  document.getElementById('wireBtn').classList.replace('bg-gray-700','bg-orange-700');
+  document.getElementById('solidBtn').classList.replace('bg-orange-700','bg-gray-700');
+  draw();
+});
+document.getElementById('solidBtn').addEventListener('click', () => {
+  wireframe = false;
+  document.getElementById('solidBtn').classList.replace('bg-gray-700','bg-orange-700');
+  document.getElementById('wireBtn').classList.replace('bg-orange-700','bg-gray-700');
+  draw();
+});
+
+document.getElementById('colorScheme').addEventListener('change', e => {
+  colorScheme = e.target.value;
+  draw();
+});
+
+canvas.addEventListener('mousedown', e => {
+  isDragging = true;
+  lastMX = e.clientX; lastMY = e.clientY;
+  canvas.style.cursor = 'grabbing';
+});
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  const dx = e.clientX - lastMX, dy = e.clientY - lastMY;
+  rotY += dx * 0.01;
+  rotX += dy * 0.01;
+  lastMX = e.clientX; lastMY = e.clientY;
+  draw();
+});
+window.addEventListener('mouseup', () => {
+  isDragging = false;
+  canvas.style.cursor = 'grab';
+});
+
+// LocalStorage: persist shell parameters
+function saveShellParams() {
+  localStorage.setItem('shell_params', JSON.stringify(params));
+  localStorage.setItem('shell_color', colorScheme);
+  localStorage.setItem('shell_wire', wireframe ? '1' : '0');
+}
+function loadShellParams() {
+  const saved = localStorage.getItem('shell_params');
+  if (saved) try {
+    const p = JSON.parse(saved);
+    params = p;
+    document.getElementById('paramA').value = p.a;
+    document.getElementById('paramB').value = p.b;
+    document.getElementById('paramTurns').value = p.turns;
+    document.getElementById('paramAspect').value = p.aspect;
+    document.getElementById('valA').textContent = p.a.toFixed(2);
+    document.getElementById('valB').textContent = p.b.toFixed(2);
+    document.getElementById('valTurns').textContent = p.turns.toFixed(1);
+    document.getElementById('valAspect').textContent = p.aspect.toFixed(2);
+  } catch(e) {}
+  const savedColor = localStorage.getItem('shell_color');
+  if (savedColor) { colorScheme = savedColor; document.getElementById('colorScheme').value = savedColor; }
+  const savedWire = localStorage.getItem('shell_wire');
+  if (savedWire === '1') wireframe = true;
+}
+loadShellParams();
+draw();
+setInterval(saveShellParams, 4000);
+</script>
+</body>
+</html>
